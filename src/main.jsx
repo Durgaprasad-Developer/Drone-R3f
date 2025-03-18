@@ -5,10 +5,41 @@ import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader'
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader'
 import { OrbitControls, Environment } from '@react-three/drei'
 import * as THREE from 'three'
+import * as CANNON from 'cannon-es'
 import './index.css'
-import { bleach } from 'three/examples/jsm/tsl/display/BleachBypass.js'
-import { color } from 'three/tsl'
 
+// Physics world setup
+const world = new CANNON.World({
+  gravity: new CANNON.Vec3(0, -9.82, 0) // Earth gravity
+});
+
+function Physics({ children }) {
+  const [physicsReady, setPhysicsReady] = useState(false);
+  
+  useEffect(() => {
+    // Configure physics world
+    world.defaultContactMaterial.restitution = 0.3;
+    world.defaultContactMaterial.friction = 0.3;
+    
+    // Add ground plane
+    const groundBody = new CANNON.Body({
+      type: CANNON.Body.STATIC,
+      shape: new CANNON.Plane(),
+    });
+    groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0); // Rotate plane to be horizontal
+    groundBody.position.set(0, -50, 0);
+    world.addBody(groundBody);
+    
+    setPhysicsReady(true);
+  }, []);
+  
+  useFrame((state, delta) => {
+    // Update physics world
+    world.step(1/60, delta, 3);
+  });
+  
+  return physicsReady ? children : null;
+}
 
 function CameraController({ target, offset = [0, 0, 200], focusedPart}) {
   const { camera } = useThree();
@@ -20,11 +51,9 @@ function CameraController({ target, offset = [0, 0, 200], focusedPart}) {
     const targetPosition = new THREE.Vector3();
     target.current.getWorldPosition(targetPosition);
     
-
     if (focusedPart && target.current) {
       let part = null;
       
-
       target.current.traverse((child) => {
         if (child.isMesh && child.name === focusedPart) {
           part = child;
@@ -32,8 +61,6 @@ function CameraController({ target, offset = [0, 0, 200], focusedPart}) {
       });
       
       if (part) {
-        
-        console.log('FOUNT PART TO FOCUS' +   part)
         const partPosition = new THREE.Vector3();
         part.getWorldPosition(partPosition);
         
@@ -53,7 +80,7 @@ function CameraController({ target, offset = [0, 0, 200], focusedPart}) {
   return null;
 }
 
-function Model({ url, materialUrl, position, rotationPart, dronePosition, onPartsFound, isStarted }) {
+function Model({ url, materialUrl, position, rotationPart, dronePosition, onPartsFound, isStarted, physicsBody }) {
   const groupRef = useRef()
   const [partFound, setPartFound] = useState(false)
   const [materialLoaded, setMaterialLoaded] = useState(false)
@@ -66,7 +93,6 @@ function Model({ url, materialUrl, position, rotationPart, dronePosition, onPart
 
   const textureLoader = new THREE.TextureLoader();
   
-
   const texturePaths = {
     parts: {
       diffuse: 'src/assets/uploads_files_3653841_Textures (extract.me)/Textures_Parts/Diffuse_Part.jpg',
@@ -84,7 +110,6 @@ function Model({ url, materialUrl, position, rotationPart, dronePosition, onPart
     }
   };
   
-
   const [textures, setTextures] = useState({
     parts: {},
     frame: {}
@@ -136,7 +161,6 @@ function Model({ url, materialUrl, position, rotationPart, dronePosition, onPart
         path,
         (texture) => {
           loadedTextures.frame[type] = texture;
-          
           
           if (type === 'normal') {
             texture.encoding = THREE.LinearEncoding;
@@ -295,54 +319,26 @@ function Model({ url, materialUrl, position, rotationPart, dronePosition, onPart
     }
   }, [obj, texturesLoaded, textures]);
 
-
-  useEffect(() => {
-    if (groupRef.current && dronePosition) {
-      groupRef.current.position.x = dronePosition.x;
-      groupRef.current.position.y = dronePosition.y;
-      groupRef.current.position.z = dronePosition.z;
+  // Update position from physics
+  useFrame(() => {
+    if (groupRef.current && physicsBody) {
+      const { position, quaternion } = physicsBody;
+      groupRef.current.position.set(position.x, position.y, position.z);
+      groupRef.current.quaternion.set(quaternion.x, quaternion.y, quaternion.z, quaternion.w);
     }
-  }, [dronePosition]);
+  });
 
-  // Rotate parts and propellers
-  const { camera } = useThree();
+  // Rotate propellers
   useFrame((state, delta) => {
-    if (obj) {
-      let foundPartToRotate = false;
-      
-      if (isStarted && propellerRefs.current) {
-        
-        for (let i = 1; i <= 4; i++) {
-          const propName = `GEO_Propeller_0${i}`;
-          const propeller = propellerRefs.current[propName];
-          if (propeller) {
-            
-            const direction = i % 2 === 0 ? 1 : -1;
-            propeller.rotateY(delta * 20);
-          }
+    if (obj && isStarted) {
+      // Rotate propellers when drone is started
+      for (let i = 1; i <= 4; i++) {
+        const propName = `GEO_Propeller_0${i}`;
+        const propeller = propellerRefs.current[propName];
+        if (propeller) {
+          const direction = i % 2 === 0 ? 1 : -1;
+          propeller.rotateY(delta * 20 * direction);
         }
-      }
-      
-      obj.traverse((child) => {
-        if (child.isMesh && (child.name === rotationPart || '')) {
-          
-          //i have to implement the camera zoom
-          const part = child
-          console.log('FOUNT PART TO FOCUS' +   part)
-          const partPosition = new THREE.Vector3();
-          part.getWorldPosition(partPosition);
-          
-          // Position camera closer to the part (30 units away)
-          const direction = new THREE.Vector3().subVectors(camera.position, partPosition).normalize();
-          camera.position.copy(partPosition).add(direction.multiplyScalar(30));
-          camera.lookAt(partPosition);
-          return;
-        }
-        
-      });
-      
-      if (partFound !== foundPartToRotate) {
-        setPartFound(foundPartToRotate);
       }
     }
   });
@@ -366,10 +362,169 @@ function App() {
   const modelRef = useRef();
   const controlsRef = useRef();
   
+  // Physics refs
+  const physicsBodyRef = useRef(null);
   const [dronePosition, setDronePosition] = useState({ x: 0, y: 0, z: 0 });
+  const [droneRotation, setDroneRotation] = useState({ x: 0, y: 0, z: 0 });
+  const [droneVelocity, setDroneVelocity] = useState({ x: 0, y: 0, z: 0 });
+  const [droneAngularVelocity, setDroneAngularVelocity] = useState({ x: 0, y: 0, z: 0 });
   
+  // Thrust forces
+  const [thrustForce, setThrustForce] = useState(0);
+  const [stabilityForce, setStabilityForce] = useState(0);
+  const maxThrust = 200;
+  const thrustStep = 20;
   const movementSpeed = 5;
-
+  const rotationSpeed = 0.5;
+  
+  // Key states for smooth controls
+  const [keysPressed, setKeysPressed] = useState({
+    up: false,
+    down: false,
+    left: false,
+    right: false,
+    forward: false,
+    backward: false,
+    rotateLeft: false,
+    rotateRight: false,
+    pitchUp: false,
+    pitchDown: false
+  });
+  
+  // Initialize physics on mount
+  useEffect(() => {
+    if (!physicsBodyRef.current) {
+      // Create a drone body
+      const droneBody = new CANNON.Body({
+        mass: 1, // kg
+        position: new CANNON.Vec3(0, 0, 0),
+        shape: new CANNON.Box(new CANNON.Vec3(10, 2, 10)), // Approximate size of drone
+      });
+      
+      // Add damping to simulate air resistance
+      droneBody.linearDamping = 0.7;
+      droneBody.angularDamping = 0.8;
+      
+      // Add to world
+      world.addBody(droneBody);
+      physicsBodyRef.current = droneBody;
+    }
+  }, []);
+  
+  // Update UI position data from physics
+  useEffect(() => {
+    if (!physicsBodyRef.current) return;
+    
+    const updatePositionData = () => {
+      const pos = physicsBodyRef.current.position;
+      const rot = new CANNON.Vec3();
+      physicsBodyRef.current.quaternion.toEuler(rot);
+      const vel = physicsBodyRef.current.velocity;
+      const angVel = physicsBodyRef.current.angularVelocity;
+      
+      setDronePosition({ x: pos.x, y: pos.y, z: pos.z });
+      setDroneRotation({ x: rot.x, y: rot.y, z: rot.z });
+      setDroneVelocity({ x: vel.x, y: vel.y, z: vel.z });
+      setDroneAngularVelocity({ x: angVel.x, y: angVel.y, z: angVel.z });
+    };
+    
+    const interval = setInterval(updatePositionData, 50);
+    return () => clearInterval(interval);
+  }, []);
+  
+  // Apply continuous forces based on keys pressed
+  useFrame(() => {
+    if (!isStarted || !physicsBodyRef.current) return;
+    
+    const applyForces = () => {
+      const body = physicsBodyRef.current;
+      
+      // Reset forces
+      body.force.set(0, 0, 0);
+      body.torque.set(0, 0, 0);
+      
+      // Apply gravity compensation when started
+      if (isStarted) {
+        body.force.y += 9.82 * body.mass; // Counteract gravity
+      }
+      
+      // Apply thrust
+      body.force.y += thrustForce;
+      
+      // Apply stability (auto-leveling)
+      const upVector = new CANNON.Vec3(0, 1, 0);
+      const currentUp = new CANNON.Vec3();
+      body.quaternion.vmult(upVector, currentUp);
+      
+      // Calculate correction torque to level the drone
+      const correctionTorque = new CANNON.Vec3();
+      upVector.cross(currentUp, correctionTorque);
+      correctionTorque.scale(stabilityForce, correctionTorque);
+      body.torque.vadd(correctionTorque, body.torque);
+      
+      // Apply directional forces
+      const forwardDir = new CANNON.Vec3(0, 0, -1);
+      const rightDir = new CANNON.Vec3(1, 0, 0);
+      const bodyForward = new CANNON.Vec3();
+      const bodyRight = new CANNON.Vec3();
+      
+      body.quaternion.vmult(forwardDir, bodyForward);
+      body.quaternion.vmult(rightDir, bodyRight);
+      
+      if (keysPressed.forward) {
+        // Apply force in body's forward direction
+        bodyForward.scale(movementSpeed, bodyForward);
+        body.force.vadd(bodyForward, body.force);
+      }
+      
+      if (keysPressed.backward) {
+        // Apply force in body's backward direction
+        bodyForward.scale(-movementSpeed, bodyForward);
+        body.force.vadd(bodyForward, body.force);
+      }
+      
+      if (keysPressed.right) {
+        // Apply force in body's right direction
+        bodyRight.scale(movementSpeed, bodyRight);
+        body.force.vadd(bodyRight, body.force);
+      }
+      
+      if (keysPressed.left) {
+        // Apply force in body's left direction
+        bodyRight.scale(-movementSpeed, bodyRight);
+        body.force.vadd(bodyRight, body.force);
+      }
+      
+      // Apply rotational forces
+      if (keysPressed.rotateLeft) {
+        body.torque.y += rotationSpeed;
+      }
+      
+      if (keysPressed.rotateRight) {
+        body.torque.y -= rotationSpeed;
+      }
+      
+      if (keysPressed.pitchUp) {
+        body.torque.x += rotationSpeed;
+      }
+      
+      if (keysPressed.pitchDown) {
+        body.torque.x -= rotationSpeed;
+      }
+      
+      // Apply thrust changes
+      if (keysPressed.up && thrustForce < maxThrust) {
+        setThrustForce(prev => Math.min(prev + thrustStep, maxThrust));
+      }
+      
+      if (keysPressed.down && thrustForce > 0) {
+        setThrustForce(prev => Math.max(prev - thrustStep, 0));
+      }
+    };
+    
+    applyForces();
+  });
+  
   const handlePartsFound = (foundParts) => {
     setParts(foundParts);
     setModelLoaded(true);
@@ -379,52 +534,45 @@ function App() {
     }
   };
   
-  const moveDrone = (direction) => {
-    setDronePosition(prev => {
-      const newPos = { ...prev };
-      
-      switch (direction) {
-        case 'up':
-          newPos.y += movementSpeed*10;
-          break;
-        case 'down':
-          newPos.y -= movementSpeed*10;
-          break;
-        case 'forward':
-          newPos.z -= movementSpeed*10;
-          break;
-        case 'backward':
-          newPos.z += movementSpeed*10;
-          break;
-        case 'left':
-          newPos.x -= movementSpeed*10;
-          break;
-        case 'right':
-          newPos.x += movementSpeed*10;
-          break;
-        default:
-          break;
-      }
-      
-      return newPos;
-    });
-  };
-  
+  // Start the drone
   const handleStart = () => {
     setIsStarted(true);
     setShowControls(true);
+    setThrustForce(9.82 * (physicsBodyRef.current?.mass || 1)); // Initial thrust = gravity
+    setStabilityForce(5); // Auto-leveling
     
     if (controlsRef.current) {
       controlsRef.current.enabled = false;
     }
   };
-  const handleStop = () =>{
+  
+  // Stop the drone
+  const handleStop = () => {
     setIsStarted(false);
     setShowControls(false);
+    setThrustForce(0);
+    setStabilityForce(0);
+    
     if (controlsRef.current) {
       controlsRef.current.enabled = true;
     }
-  }
+    
+    // Reset physics body
+    if (physicsBodyRef.current) {
+      physicsBodyRef.current.velocity.set(0, 0, 0);
+      physicsBodyRef.current.angularVelocity.set(0, 0, 0);
+    }
+  };
+  
+  // Reset the drone position
+  const handleReset = () => {
+    if (physicsBodyRef.current) {
+      physicsBodyRef.current.position.set(0, 0, 0);
+      physicsBodyRef.current.quaternion.set(0, 0, 0, 1);
+      physicsBodyRef.current.velocity.set(0, 0, 0);
+      physicsBodyRef.current.angularVelocity.set(0, 0, 0);
+    }
+  };
   
   // Handle part selection
   const handlePartSelect = (part) => {
@@ -452,33 +600,98 @@ function App() {
     const handleKeyDown = (e) => {
       if (!isStarted) return;
       
+      const updateKeys = { ...keysPressed };
+      
       switch (e.key) {
         case 'ArrowUp':
-          moveDrone('forward');
+          updateKeys.forward = true;
           break;
         case 'ArrowDown':
-          moveDrone('backward');
+          updateKeys.backward = true;
           break;
         case 'ArrowLeft':
-          moveDrone('left');
+          updateKeys.left = true;
           break;
         case 'ArrowRight':
-          moveDrone('right');
+          updateKeys.right = true;
           break;
         case 'w':
-          moveDrone('up');
+          updateKeys.up = true;
           break;
         case 's':
-          moveDrone('down');
+          updateKeys.down = true;
+          break;
+        case 'a':
+          updateKeys.rotateLeft = true;
+          break;
+        case 'd':
+          updateKeys.rotateRight = true;
+          break;
+        case 'i':
+          updateKeys.pitchUp = true;
+          break;
+        case 'k':
+          updateKeys.pitchDown = true;
+          break;
+        case 'r':
+          handleReset();
           break;
         default:
           break;
       }
+      
+      setKeysPressed(updateKeys);
+    };
+    
+    const handleKeyUp = (e) => {
+      const updateKeys = { ...keysPressed };
+      
+      switch (e.key) {
+        case 'ArrowUp':
+          updateKeys.forward = false;
+          break;
+        case 'ArrowDown':
+          updateKeys.backward = false;
+          break;
+        case 'ArrowLeft':
+          updateKeys.left = false;
+          break;
+        case 'ArrowRight':
+          updateKeys.right = false;
+          break;
+        case 'w':
+          updateKeys.up = false;
+          break;
+        case 's':
+          updateKeys.down = false;
+          break;
+        case 'a':
+          updateKeys.rotateLeft = false;
+          break;
+        case 'd':
+          updateKeys.rotateRight = false;
+          break;
+        case 'i':
+          updateKeys.pitchUp = false;
+          break;
+        case 'k':
+          updateKeys.pitchDown = false;
+          break;
+        default:
+          break;
+      }
+      
+      setKeysPressed(updateKeys);
     };
     
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isStarted]);
+    window.addEventListener('keyup', handleKeyUp);
+    
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [isStarted, keysPressed]);
 
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
@@ -504,45 +717,47 @@ function App() {
             camera={{ position: [0, 0, 200], fov: 50 }}
             gl={{ antialias: true, outputEncoding: THREE.sRGBEncoding }}
           >
-            <Environment 
-            files="src/assets/golden_gate_hills_4k.exr" 
-            background
-            />
-            <ambientLight intensity={0.5} />
-            <spotLight position={[10, 10, 10]} angle={0.15} penumbra={1} intensity={1.5} castShadow />
-            <pointLight position={[-10, -10, -10]} intensity={0.8} />
-            
-            <Model
-              url="src/assets/Drone_Ob.obj"  
-              materialUrl="src/assets/Drone_Ob.mtl"  
-              position={[0, 0, 0]}
-              rotationPart={selectedPart}
-              dronePosition={dronePosition}
-              onPartsFound={handlePartsFound}
-              isStarted={isStarted}
-              ref={modelRef}
-            />
-            
-            {/* Camera controller */}
-            <CameraController 
-              target={modelRef} 
-              offset={[0, 20, 100]} 
-              focusedPart={selectedPart !== 'entire_model' ? selectedPart : null} 
-            />
-            
-            <OrbitControls 
-              ref={controlsRef}
-              enablePan={true}
-              enableZoom={true}
-              enableRotate={true}
-              makeDefault
-              addEventListener={undefined}
-              removeEventListener={undefined}
-              options={{ passive: true }}
-            />
+            <Physics>
+              <Environment 
+                files="src/assets/golden_gate_hills_4k.exr" 
+                background
+              />
+              <ambientLight intensity={0.5} />
+              <spotLight position={[10, 10, 10]} angle={0.15} penumbra={1} intensity={1.5} castShadow />
+              <pointLight position={[-10, -10, -10]} intensity={0.8} />
+              
+              <Model
+                url="src/assets/Drone_Ob.obj"  
+                materialUrl="src/assets/Drone_Ob.mtl"  
+                position={[0, 0, 0]}
+                rotationPart={selectedPart}
+                onPartsFound={handlePartsFound}
+                isStarted={isStarted}
+                ref={modelRef}
+                physicsBody={physicsBodyRef.current}
+              />
+              
+              {/* Camera controller */}
+              <CameraController 
+                target={modelRef} 
+                offset={[0, 20, 100]} 
+                focusedPart={selectedPart !== 'entire_model' ? selectedPart : null} 
+              />
+              
+              <OrbitControls 
+                ref={controlsRef}
+                enablePan={true}
+                enableZoom={true}
+                enableRotate={true}
+                makeDefault
+                addEventListener={undefined}
+                removeEventListener={undefined}
+                options={{ passive: true }}
+              />
+            </Physics>
           </Canvas>
 
-          {/* Parts list UI */}
+          {/* UI Panel */}
           <div style={{
             position: 'absolute',
             top: 10,
@@ -555,7 +770,7 @@ function App() {
             overflowY: 'auto',
             zIndex: 100
           }}>
-            <h3>Model Controls</h3>
+            <h3>Drone Controls</h3>
 
             {modelLoaded ? (
               <>
@@ -575,168 +790,87 @@ function App() {
                   >
                     Start Drone
                   </button>
-
-                ):(
-                  <button 
-                    onClick={handleStop}
-                    style={{
-                      backgroundColor: '#4af',
-                      color: 'white',
-                      border: 'none',
-                      padding: '8px 16px',
-                      borderRadius: 4,
-                      cursor: 'pointer',
-                      marginBottom: 10,
-                      fontWeight: 'bold'
-                    }}
-                  >
-                    Stop
-                  </button>
+                ) : (
+                  <div>
+                    <button 
+                      onClick={handleStop}
+                      style={{
+                        backgroundColor: '#f44',
+                        color: 'white',
+                        border: 'none',
+                        padding: '8px 16px',
+                        borderRadius: 4,
+                        cursor: 'pointer',
+                        marginBottom: 10,
+                        marginRight: 10,
+                        fontWeight: 'bold'
+                      }}
+                    >
+                      Stop
+                    </button>
+                    
+                    <button 
+                      onClick={handleReset}
+                      style={{
+                        backgroundColor: '#f80',
+                        color: 'white',
+                        border: 'none',
+                        padding: '8px 16px',
+                        borderRadius: 4,
+                        cursor: 'pointer',
+                        marginBottom: 10,
+                        fontWeight: 'bold'
+                      }}
+                    >
+                      Reset Position
+                    </button>
+                  </div>
                 )}
                 
                 {isStarted && (
                   <div style={{ marginBottom: 15 }}>
-                    <p><strong>Drone Position:</strong></p>
-                    <p>X: {dronePosition.x.toFixed(1)} Y: {dronePosition.y.toFixed(1)} Z: {dronePosition.z.toFixed(1)}</p>
-                  </div>
-                )}
-
-                <p><strong>Select part to focus:</strong></p>
-                <ul>
-                  <li
-                    key="entire_model"
-                    onClick={() => handlePartSelect('entire_model')}
-                    style={{
-                      cursor: 'pointer',
-                      fontWeight: selectedPart === 'entire_model' ? 'bold' : 'normal',
-                      color: selectedPart === 'entire_model' ? '#4af' : 'white',
-                      marginBottom: 8
-                    }}>
-                    View entire model
-                  </li>
-
-                  {parts.map((part, index) => (
-                    <li key={index}
-                      onClick={() => handlePartSelect(part)}
-                      style={{
-                        cursor: 'pointer',
-                        fontWeight: selectedPart === part ? 'bold' : 'normal',
-                        color: selectedPart === part ? '#4af' : 'white'
-                      }}>
-                      {part}
-                    </li>
-                  ))}
-                </ul>
-
-                {showControls && (
-                  <div style={{ marginTop: 20 }}>
-                    <h4>Flight Controls</h4>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5 }}>
-                      <button 
-                        onClick={() => moveDrone('up')}
-                        style={{
-                          backgroundColor: '#4af',
-                          color: 'white',
-                          border: 'none',
-                          padding: '8px 16px',
-                          borderRadius: 4,
-                          cursor: 'pointer',
-                          width: 100
-                        }}
-                      >
-                        Up (W)
-                      </button>
-                      
-                      <div style={{ display: 'flex', gap: 5 }}>
-                        <button 
-                          onClick={() => moveDrone('left')}
-                          style={{
-                            backgroundColor: '#4af',
-                            color: 'white',
-                            border: 'none',
-                            padding: '8px 16px',
-                            borderRadius: 4,
-                            cursor: 'pointer',
-                            width: 100
-                          }}
-                        >
-                          Left (←)
-                        </button>
-                        
-                        <button 
-                          onClick={() => moveDrone('right')}
-                          style={{
-                            backgroundColor: '#4af',
-                            color: 'white',
-                            border: 'none',
-                            padding: '8px 16px',
-                            borderRadius: 4,
-                            cursor: 'pointer',
-                            width: 100
-                          }}
-                        >
-                          Right (→)
-                        </button>
-                      </div>
-                      
-                      <div style={{ display: 'flex', gap: 5 }}>
-                        <button 
-                          onClick={() => moveDrone('forward')}
-                          style={{
-                            backgroundColor: '#4af',
-                            color: 'white',
-                            border: 'none',
-                            padding: '8px 16px',
-                            borderRadius: 4,
-                            cursor: 'pointer',
-                            width: 100
-                          }}
-                        >
-                          Forward (↑)
-                        </button>
-                        
-                        <button 
-                          onClick={() => moveDrone('backward')}
-                          style={{
-                            backgroundColor: '#4af',
-                            color: 'white',
-                            border: 'none',
-                            padding: '8px 16px',
-                            borderRadius: 4,
-                            cursor: 'pointer',
-                            width: 100
-                          }}
-                        >
-                          Back (↓)
-                        </button>
-                      </div>
-                      
-                      <button 
-                        onClick={() => moveDrone('down')}
-                        style={{
-                          backgroundColor: '#4af',
-                          color: 'white',
-                          border: 'none',
-                          padding: '8px 16px',
-                          borderRadius: 4,
-                          cursor: 'pointer',
-                          width: 100
-                        }}
-                      >
-                        Down (S)
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </>
-            ) : (
-              <p>Loading model and textures...</p>
-            )}
-          </div>
-        </>
-      )}
+                    <p><strong>Drone Stats:</strong></p>
+                    <p>Position: X: {dronePosition.x.toFixed(1)} Y: {dronePosition.y.toFixed(1)} Z: {dronePosition.z.toFixed(1)}</p>
+                    <p>Rotation: X: {(droneRotation.x * 180 / Math.PI).toFixed(1)}° Y: {(droneRotation.y * 180 / Math.PI).toFixed(1)}° Z: {(droneRotation.z * 180 / Math.PI).toFixed(1)}°</p>
+                    <p>Velocity: X: {droneVelocity.x.toFixed(1)} Y: {droneVelocity.y.toFixed(1)} Z: {droneVelocity.z.toFixed(1)}</p>
+    <p>Thrust: {thrustForce.toFixed(1)}</p>
+                    
+    <div>
+      <h4>Controls:</h4>
+      <p>W/S: Increase/Decrease Thrust</p>
+      <p>Arrow Keys: Move Forward/Back/Left/Right</p>
+      <p>A/D: Rotate Left/Right</p>
+      <p>I/K: Pitch Up/Down</p>
+      <p>R: Reset Position</p>
     </div>
-  )
+  </div>
+)}
+
+<h3>Part Selection</h3>
+<select 
+  value={selectedPart} 
+  onChange={(e) => handlePartSelect(e.target.value)}
+  style={{
+    padding: '5px 10px',
+    marginBottom: 10,
+    width: '100%',
+    borderRadius: 4
+  }}
+>
+  <option value="entire_model">Entire Model</option>
+  {parts.map(part => (
+    <option key={part} value={part}>{part}</option>
+  ))}
+</select>
+</>
+) : (
+  <p>Loading drone model...</p>
+)}
+</div>
+</>
+)}
+</div>
+);
 }
 
-createRoot(document.getElementById('root')).render(<App />)
+createRoot(document.getElementById('root')).render(<App />);
