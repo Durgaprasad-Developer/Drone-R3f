@@ -1,3 +1,7 @@
+# Drone Simulator 
+
+A project to smulate the parts and functionalities of drone using React Three Fiber.
+
 # React + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
