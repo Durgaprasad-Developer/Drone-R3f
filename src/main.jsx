@@ -513,10 +513,8 @@ function CameraController({ targetPart, modelRef, isStarted }) {
     targetPosition.current = center.clone().add(direction.multiplyScalar(distance));
     currentCenter.current = center.clone();
     
-    // Start the two-stage animation
     animationStage.current = 2;
     
-    // Clean up function
     return () => {
       if (controlsRef.current && animationStage.current !== 0) {
         controlsRef.current.enabled = true;
@@ -591,12 +589,10 @@ function App() {
     setIsStarted(false);
   };
 
-  // Handle part selection
   const handlePartSelect = (part) => {
     setSelectedPart(part);
   };
 
-  // Global error handler
   useEffect(() => {
     const errorHandler = (event) => {
       console.error("Application error:", event.error);
@@ -625,6 +621,7 @@ function App() {
             camera={{ position: [0, 0, 200], fov: 50 }}
             gl={{ antialias: true, outputEncoding: THREE.sRGBEncoding }}
           >
+            <gridHelper args={[1000,100, 'white', 'gray']} />
             <Environment files="src/assets/lab.exr" background />
             <ambientLight intensity={0.5} />
             <spotLight position={[10, 10, 10]} angle={0.15} penumbra={1} intensity={1.5} castShadow />
