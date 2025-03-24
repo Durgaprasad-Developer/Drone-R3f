@@ -1,20 +1,25 @@
 import { useEffect, useRef } from 'react';
 import React from 'react';
-import { useThree,useFrame } from '@react-three/fiber';
+import { useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
+import { useCameraControls } from '../../context/context';
 
 export default function CameraController({ targetPart, isStarted }) {
   const { camera, scene } = useThree();
-  const controlsRef = useRef();
+  const controlsRef = useCameraControls();
   const targetPosition = useRef(new THREE.Vector3());
   const currentCenter = useRef(new THREE.Vector3());
   const animationStage = useRef(0); // 0: idle, 1: moving to origin, 2: moving to target
   const originalPosition = new THREE.Vector3(0, 0, 200);
   const originalLookAt = new THREE.Vector3(0, 0, 0);
 
+  
+
+
 
   const prevTargetPart = useRef(null);
+
 
   useFrame(() => {
     if (animationStage.current === 1) {
@@ -37,13 +42,15 @@ export default function CameraController({ targetPart, isStarted }) {
       // Gradually look at target center
       camera.lookAt(currentCenter.current);
 
+
       // When we get close enough to the target position, stop animating
       if (camera.position.distanceTo(targetPosition.current) < 0.01) {
         animationStage.current = 0; // Back to idle
 
         // Re-enable controls
         if (controlsRef.current) {
-          controlsRef.current.enabled = true;
+          console.log(controlsRef)
+          controlsRef.current.enabled = true
           controlsRef.current.target.copy(currentCenter.current);
         }
       }
@@ -83,7 +90,7 @@ export default function CameraController({ targetPart, isStarted }) {
 
       targetPosition.current = originalPosition.clone();
       currentCenter.current = originalLookAt.clone();
-      animationStage.current = 1;
+      animationStage.current = 2;
       return;
     }
 
@@ -104,7 +111,7 @@ export default function CameraController({ targetPart, isStarted }) {
 
     return () => {
       if (controlsRef.current && animationStage.current !== 0) {
-        controlsRef.current.enabled = true;
+        controlsRef.current.enabled = false;
       }
     };
   }, [targetPart, scene, camera]);
@@ -120,16 +127,19 @@ export default function CameraController({ targetPart, isStarted }) {
     }
   }, [isStarted, camera]);
 
+
+
   return (
-    <OrbitControls
-      ref={controlsRef}
-      enablePan={true}
-      enableZoom={true}
-      enableRotate={true}
-      makeDefault
-      addEventListener={undefined}
-      removeEventListener={undefined}
-      options={{ passive: true }}
-    />
+    <>
+      <OrbitControls
+        ref={controlsRef}
+        draggable={false}
+        enabled={false}
+        addEventListener={undefined}
+        removeEventListener={undefined}
+        options={{ passive: true }}
+      />
+      
+    </>
   );
 }

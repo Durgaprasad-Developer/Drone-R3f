@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import React from 'react';
 import { Canvas } from '@react-three/fiber';
-import { Environment } from '@react-three/drei';
+import { Environment, OrbitControls } from '@react-three/drei';
 import Model from './components/Model/Model';
 import CameraController from './components/UI/CameraController';
 import LoadingScreen from './components/UI/LoadingScreen';
@@ -10,8 +10,9 @@ import PartList from './components/UI/PartList';
 import PartInfoPanel from './components/UI/PartInfoPanel';
 import ControlButton from './components/UI/ControlButton';
 import * as THREE from 'three';
-import {motion} from 'framer-motion';
-import { div } from 'framer-motion/client';
+import { motion } from 'framer-motion';
+import { CameraProvider } from './context/context';
+import { useCameraControls } from '../src/context/context';
 // import { getPartDescription } from './constants/parts';
 
 export default function App() {
@@ -23,6 +24,10 @@ export default function App() {
     error: null,
     isStarted: false,
   });
+  const controlsRef = useCameraControls();
+
+
+  
 
   useEffect(() => {
     if (state.modelLoaded) {
@@ -85,51 +90,75 @@ export default function App() {
         <ErrorScreen error={state.error} onRetry={() => window.location.reload()} />
       ) : (
         <>
-          <Canvas
-            camera={{ position: [0, 0, 200], fov: 50 }}
-            gl={{ antialias: true, outputEncoding: THREE.sRGBEncoding }}
-          >
-            <Environment files="src/assets/lab.exr" background />
-            <Model
-              url="src/assets/Drone_Ob.obj"
-              materialUrl="src/assets/Drone_Ob.mtl"
-              isStarted={state.isStarted}
-              onPartsFound={handlePartsFound}
-            />
-            <CameraController
-              targetPart={state.selectedPart}
-              isStarted={state.isStarted}
-            />
-          </Canvas>
+          <CameraProvider>
+            <Canvas
+              camera={{ position: [0, 0, 200], fov: 50 }}
+              gl={{ antialias: true, outputEncoding: THREE.sRGBEncoding }}
+            >
 
-          <div className="absolute top-5 left-5 bg-gray-800/40 backdrop-blur-md text-white p-4 rounded-lg w-[300px] max-h-[80vh] overflow-y-auto shadow-xl border border-white/10">
-            <h2 className="text-blue-400 border-b border-white/20 pb-2 mb-4">Drone Explorer</h2>
-            <ControlButton
-              isStarted={state.isStarted}
-              onStart={handleStart}
-              onStop={handleStop}
-            />
-            <PartList
-              parts={state.parts}
-              selectedPart={state.selectedPart}
-              onSelect={handlePartSelect}
-            />
-          </div>
+              <Environment files="src/assets/lab.exr" background />
 
-          {state.selectedPart && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 20 }}
-              transition={{ duration: 0.2 }}>
-            <PartInfoPanel
-              part={state.selectedPart}
-              isStarted={state.isStarted}
-            />
-            </motion.div>
-          )}
-        </>
+              <Model
+                url="src/assets/Drone_Ob.obj"
+                materialUrl="src/assets/Drone_Ob.mtl"
+                isStarted={state.isStarted}
+                onPartsFound={handlePartsFound}
+              />
+              <CameraController
+
+                targetPart={state.selectedPart}
+                isStarted={state.isStarted}
+              />
+          
+        </Canvas>
+
+
+      <div className="absolute top-5 left-5 bg-gray-800/40 backdrop-blur-md text-white p-4 rounded-lg w-[300px] max-h-[80vh] overflow-y-auto shadow-xl border border-white/10">
+        <h2 className="text-blue-400 border-b border-white/20 pb-2 mb-4">Drone Explorer</h2>
+        <ControlButton
+          isStarted={state.isStarted}
+          onStart={handleStart}
+          onStop={handleStop}
+        />
+
+
+        <button
+          className="w-full mb-4 py-2 rounded-md transition-all duration-300 bg-green-500 hover:bg-green-600"
+          onClick={() => {
+            console.log(controlsRef)
+            if (controlsRef != null) {
+              controlsRef.current.enabled = true;
+            } else {
+              console.error("controlsRef is null");
+            }
+          }}>
+          Enable Dragging View
+        </button>
+        
+
+        <PartList
+          parts={state.parts}
+          selectedPart={state.selectedPart}
+          onSelect={handlePartSelect}
+        />
+      </div>
+
+      {state.selectedPart && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 20 }}
+          transition={{ duration: 0.2 }}>
+          <PartInfoPanel
+            part={state.selectedPart}
+            isStarted={state.isStarted}
+          />
+        </motion.div>
       )}
-    </div>
+      </CameraProvider>
+    </>
+  )
+}
+    </div >
   );
 }

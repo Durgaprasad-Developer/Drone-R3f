@@ -1,4 +1,5 @@
 import React from 'react';
+
 export default function PartList({ parts, selectedPart, onSelect }) {
     return (
       <div className="space-y-1">
@@ -25,6 +26,7 @@ export default function PartList({ parts, selectedPart, onSelect }) {
             {part.replace('GEO_', '')}
           </div>
         ))}
+
       </div>
     );
   }
