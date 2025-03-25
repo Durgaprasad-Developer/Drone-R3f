@@ -1,6 +1,6 @@
 # Drone Simulator 
 
-A project to smulate the parts and functionalities of drone using React Three Fiber.
+A project to simulate the parts and functionalities of drone using React Three Fiber.
 
 # React + Vite
 
